@@ -1,0 +1,123 @@
+name: Nginx Docker CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-nginx:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Test basic nginx configuration
+      run: |
+        echo "Testing basic nginx configuration..."
+        # Test nginx config syntax (basic version)
+        docker run --rm \
+          -v ${{ github.workspace }}/nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro \
+          nginx:alpine nginx -t
+
+    - name: Build and test HTTP server
+      run: |
+        echo "Starting nginx HTTP server..."
+        cd nginx-proxy
+        
+        # Start nginx with basic HTTP config
+        docker-compose -f nginx-compose.yml up -d
+        
+        # Wait for service to be ready
+        sleep 15
+        
+        # Test if nginx is responding
+        curl -f http://localhost/ || exit 1
+        
+        # Check if our custom content is served
+        if curl -s http://localhost/ | grep -q "Hello from Nginx Docker"; then
+          echo "✅ Custom HTML content is being served correctly"
+        else
+          echo "❌ Custom HTML content not found"
+          exit 1
+        fi
+        
+        # Clean up
+        docker-compose -f nginx-compose.yml down
+
+    - name: Security scan
+      run: |
+        echo "Running security checks..."
+        
+        # Check for security headers in TLS config
+        if [ -f "nginx-proxy/nginx-tls.conf" ]; then
+          echo "Checking SSL configuration..."
+          
+          if grep -q "X-Frame-Options" nginx-proxy/nginx-tls.conf; then
+            echo "✅ X-Frame-Options header configured"
+          else
+            echo "⚠️  Consider adding X-Frame-Options header"
+          fi
+          
+          if grep -q "server_tokens off" nginx-proxy/nginx-tls.conf; then
+            echo "✅ Server tokens disabled"
+          else
+            echo "⚠️  Consider disabling server tokens"
+          fi
+          
+          if grep -q "TLSv1.2\|TLSv1.3" nginx-proxy/nginx-tls.conf; then
+            echo "✅ Modern TLS protocols configured"
+          else
+            echo "⚠️  Consider updating TLS protocols"
+          fi
+        fi
+        
+        # Check basic nginx config
+        if grep -q "worker_connections" nginx-proxy/nginx.conf; then
+          echo "✅ Worker connections configured"
+        fi
+
+    - name: Generate report
+      run: |
+        echo "=== Lab 5 CI/CD Report ===" > test-report.txt
+        echo "Date: $(date)" >> test-report.txt
+        echo "Commit: ${{ github.sha }}" >> test-report.txt
+        echo "Branch: ${{ github.ref_name }}" >> test-report.txt
+        echo "" >> test-report.txt
+        echo "✅ Nginx configuration syntax: PASSED" >> test-report.txt
+        echo "✅ HTTP server functionality: PASSED" >> test-report.txt
+        echo "✅ Security configuration: REVIEWED" >> test-report.txt
+        echo "✅ Docker containerization: WORKING" >> test-report.txt
+        
+        cat test-report.txt
+
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-report
+        path: test-report.txt
+
+  deploy-staging:
+    needs: test-nginx
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to staging (simulation)
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        echo "This would typically:"
+        echo "  1. Build Docker images"
+        echo "  2. Push to container registry"
+        echo "  3. Deploy to staging server"
+        echo "  4. Run integration tests"
+        echo "  5. Notify team of deployment"
+        echo "✅ Staging deployment completed!"
